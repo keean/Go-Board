@@ -983,9 +983,9 @@ struct xor_shift {
         s0 = random_seed[0];
         s1 = random_seed[1];
     }
-    explicit xor_shift(uint64_t const seed[2])
-        : s0(seed[0])
-        , s1(seed[1])
+    explicit xor_shift(uint64_t l0, uint64_t l1)
+        : s0(l0)
+        , s1(l1)
         {}
     uint32_t operator() (uint32_t const scale) {
         uint64_t const l0 = s1;
@@ -1802,13 +1802,12 @@ benchmark_prng(R& random, unsigned int reps) {
 //----------------------------------------------------------------------------
 
 int main() {
+    xor_shift x {123456789362436069, 52128862988675123};
+
     std::cout << "region size: " << sizeof(region<node>) << "B\n";
     std::cout << "board size: " << sizeof(board) << "B\n";
-	uint64_t s[] = {123456789362436069, 52128862988675123};
-    xor_shift x(s);
+
     //benchmark_prng(x, 1000000000);
     benchmark_mc(x, 1000000);
-    //board<region<node>> b(25, 25);
-    //std::cout << playout(b) << "\n";
 }
 
