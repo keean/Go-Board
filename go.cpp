@@ -1464,6 +1464,12 @@ struct board {
         {
             clear_board(superset(begin(r)), w, h, moves);
         }
+    friend std::string to_string(board const& b, IteratorConstType<regions> i) {
+        static char const* const c("_ABCDEFGHJKLMNOPQRSTUVWXYZ_");
+        std::stringstream ss;
+        ss << c[(i - begin(b.r)) % b.cols] << ((i - begin(b.r)) / b.cols);
+        return ss.str();
+    }
     friend bool is_ko(board const& b, SupersetType<IteratorConstType<regions>> const i) {
         return i == b.ko;
     }
@@ -1709,16 +1715,6 @@ template<> struct regions_type<board>{typedef typename board::regions type;};
 template<> struct actions_type<board>{typedef typename board::actions type;};
 
 //----------------------------------------------------------------------------
-
-template <typename Board> inline BOOST_CONCEPT_REQUIRES(
-    ((IndexedIterator<IteratorConstType<RegionsType<Board>>>))
-    ,(std::string))
-to_string(Board const& b, IteratorConstType<RegionsType<Board>> i) {
-    static char const* const c("_ABCDEFGHJKLMNOPQRSTUVWXYZ_");
-    std::stringstream ss;
-    ss << c[(i - begin(b.r)) % b.cols] << ((i - begin(b.r)) / b.cols);
-    return ss.str();
-}
 
 template <typename Random, typename Board> struct genmove {
     genmove(Random& r) : random(r) {}
