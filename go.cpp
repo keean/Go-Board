@@ -1,5 +1,6 @@
 // Copyright (c) 2011 Keean Schupke
 
+#include <vector>
 #include <stdint.h>
 #include <iostream>
 #include <iomanip>
@@ -7,6 +8,7 @@
 #include <cassert>
 #include <fstream>
 #include <sstream>
+#include <algorithm>
 #include <boost/concept_check.hpp>
 #include <boost/concept/requires.hpp>
 #include <boost/function_types/function_arity.hpp>
@@ -643,8 +645,8 @@ private:
 
 template <typename T> struct array_base {
     array_base& operator= (array_base const& b) = delete;
-    explicit array_base(SizeType<array<T>> n) : data((n == 0) ? nullptr : new T[n]), size(n) {}
-    array_base(array_base const& b) throw() : data(b.data), size(b.size) {}
+    explicit array_base(SizeType<array<T>> n = 0) : data((n == 0) ? nullptr : new T[n]), size(n) {}
+    explicit array_base(array_base const& b) throw() : data(b.data), size(b.size) {}
     ~array_base() throw() {
         delete data;
     }
@@ -655,17 +657,19 @@ template <typename T> struct array_base {
 template <typename T> struct array {
     BOOST_CONCEPT_ASSERT((Regular<ValueType<array>>));
 // Regular
-    explicit array(SizeType<array> n = 0) : base(n) {}
+    explicit array(SizeType<array<T>> n = 0) : base(n) {}
     array(array const& b) : base(b.base.size) {
-        copy_n(b.base.data, b.base.size, base.data);
+        std::copy_n(b.base.data, b.base.size, base.data);
+        base.size = b.base.size;
     }
     array(array&& b) : base(b.base) {
         b.base.data = nullptr;
         b.base.size = 0;
     }
-    array& operator= (array b) {
-        swap(*this, b);
-        return *this;
+    array& operator= (array const& b) {
+        assert(b.base.size == base.size);
+        std::copy_n(b.base.data, b.base.size, base.data);
+        base.size = b.base.size;
     }
 // Linearizable
     friend IteratorType<array> begin(array& a) {
@@ -720,6 +724,12 @@ BOOST_CONCEPT_ASSERT((IndexedIterator<IteratorType<array<int>>>));
 BOOST_CONCEPT_ASSERT((Readable<IteratorConstType<array<int>>>));
 BOOST_CONCEPT_ASSERT((IndexedIterator<IteratorConstType<array<int>>>));
 
+template <typename T> struct underlying_sack {
+private:
+    array_base<T> base;
+    SizeType<array<T>> size;
+};
+
 template <typename T> struct sack {
     BOOST_CONCEPT_ASSERT((Regular<T>));
 // Regular
@@ -727,13 +737,16 @@ template <typename T> struct sack {
     sack(sack const& b) : base(b.base.size), size(b.size) {
         copy_n(b.base.data, b.size, base.data);
     }
-    sack(sack&& b) : base(b.base), size(b.size) {
-        b.base.data = nullptr;
-        b.base.size = 0;
-        b.size = 0;
+    sack(sack&& b) : base(), size(0) {
+        swap(b.base.data, base.data);
+        swap(b.base.size, base.size);
+        swap(b.size, size);
+
     }
     sack& operator= (sack b) {
-        swap(*this, b);
+        swap(b.base.data, base.data);
+        swap(b.base.size, base.size);
+        swap(b.size, size);
         return *this;
     }
 // Linearizable
@@ -789,6 +802,7 @@ template <typename T> inline bool operator< (sack<T> const& a, sack<T> const& b)
     return lexicographical_less(begin(a), end(a), begin(b), end(b));
 }
 
+template <typename T> struct underlying_type<sack<T>> {typedef underlying_sack<T> type;};
 template <typename T> struct iterator_type<sack<T>> {typedef IteratorType<array<T>> type;};
 template <typename T> struct iterator_const_type<sack<T>> {typedef IteratorConstType<array<T>> type;};
 template <typename T> struct size_type<sack<T>> {typedef SizeType<array<T>> type;};
@@ -1295,7 +1309,7 @@ struct colour {
     static type opposite(type const c) {
         return 1 - c;
     }
-};
+} colour;
 
 struct node {
     unsigned int pseudo_liberties;
@@ -1455,7 +1469,7 @@ struct board {
         , cols(w)
         , rows(h)
         , r(w * h)
-        , moves(w * h)
+        , moves((w - 1) * (h - 1))
         , ko(nullptr)
         , points {0, 0}
         , passes(0)
@@ -1556,6 +1570,7 @@ struct board {
                         break;
                 }
                 std::cout << std::setw(2) << std::hex << source(j).pseudo_liberties << std::dec << "\e[0m";
+                //std::cout << std::setw(2) << std::hex << static_cast<int>(source(j).neighbours[b.my_colour]) << std::dec << "\e[0m";
                 i = successor(i);
             }
             std::cout << "\n";
@@ -1684,6 +1699,7 @@ struct board {
         my_colour = colour::black;
     }
 
+    /*
     board& operator= (board const& b) {
         copy_n(begin(b.r), size(b.r), begin(r));
         copy_n(begin(b.moves), size(b.moves), begin(moves));
@@ -1695,6 +1711,29 @@ struct board {
         plies = b.plies;
         my_colour = b.my_colour;
         return *this;
+    }
+    */
+
+    board& operator= (board const& b) = delete;
+
+    void push() {
+        stack.emplace_back(r, moves, ko, points, passes, plies, my_colour);
+    }
+
+    void copy(unsigned int i = 0) {
+        board_save const& s(stack[stack.size() - (i + 1)]);
+        r = s.r;
+        moves = s.moves;
+        ko = s.ko;
+        points[0] = s.points[0];
+        points[1] = s.points[1];
+        passes = s.passes;
+        plies = s.plies;
+        my_colour = s.my_colour;
+    }
+
+    void pop() {
+        stack.pop_back();
     }
         
 private:
@@ -1709,6 +1748,36 @@ private:
     unsigned int passes;
     unsigned int plies;
     colour::type my_colour;
+
+    struct board_save {
+        regions r;
+        actions moves;
+        IteratorConstType<regions> ko;
+        unsigned int points[2];
+        unsigned int passes;
+        unsigned int plies;
+        colour::type my_colour;
+
+        board_save(
+            regions const& r, 
+            actions const& moves,
+            IteratorConstType<regions> const& ko,
+            unsigned int const* points,
+            unsigned int const& passes,
+            unsigned int const& plies,
+            colour::type const& my_colour
+        )
+        : r(r)
+        , moves(moves)
+        , ko(ko)
+        , points{points[0], points[1]}
+        , passes(passes)
+        , plies(plies)
+        , my_colour(my_colour)
+        {}
+    };
+
+    std::vector<board_save> stack {};
 };
 
 template<> struct regions_type<board>{typedef typename board::regions type;};
@@ -1744,21 +1813,23 @@ template <typename Board, typename Genmove> inline void playout(Board& b, Genmov
 
 template <typename Random> void benchmark_mc(Random& random, unsigned int reps) {
     board b(11, 11);
-    //board c(11, 11);
     unsigned int plies(0);
     unsigned int games(0);
     unsigned int black_wins(0);
     unsigned int white_wins(0);
     genmove<Random, board> g(random);
 
-    //b.clear();
-    //c = b;
+    result(b, g(b)); // play one move
+    b.push(); // save board state.
+    show_board(b);
+
     double const t1(rtime());
     while (games < reps) {
-        b.clear();
-        //b = c;
+        b.copy(); // copy board at top of stack
+        show_board(b);
         playout(b, g);
         if (b.plies < b.max_moves) {
+            show_board(b);
             plies += b.plies;
             float const s(static_cast<float>(utility(b, colour::black)) - 6.5f);
 			//std::cout << s << ' ';
